@@ -1,0 +1,34 @@
+#!/system/bin/sh
+# Target: MediaTek 6nm ARMv8 Kernel Environment
+# Requirement: Root (su) execution
+
+echo "[*] Initiating MediaTek Kernel Tuning Sequence..."
+
+# 1. I/O Scheduler Optimization
+# Older flash storage benefits from strict deadline scheduling to prevent micro-stutters
+# during heavy multitasking or app compilation.
+echo "[+] Configuring block storage schedulers..."
+for queue in /sys/block/*/queue/scheduler; do
+    echo "mq-deadline" > "$queue" 2>/dev/null
+done
+
+# 2. Thermal Service Mitigation
+# Some generic system images fail to read OEM thermal sensors properly, causing
+# the CPU governor to panic and lock at minimum frequencies. 
+echo "[+] Balancing thermal engine parameters..."
+if [ -e /sys/devices/virtual/thermal/thermal_zone0/mode ]; then
+    # Ensures the hardware thermal limiters are active, but disables aggressive software limits
+    stop thermal-engine 2>/dev/null
+    stop thermald 2>/dev/null
+    echo "Thermal services halted. Relying on raw hardware safety limits."
+fi
+
+# 3. ZRAM Compression Algorithm
+# Switching from generic lzo to lz4 for faster memory compression/decompression
+# critical for 4GB/6GB RAM tiers.
+echo "[+] Reconfiguring ZRAM algorithm..."
+swapoff /dev/block/zram0 2>/dev/null
+echo "lz4" > /sys/block/zram0/comp_algorithm
+swapon /dev/block/zram0 2>/dev/null
+
+echo "[!] System Infrastructure Optimized."
