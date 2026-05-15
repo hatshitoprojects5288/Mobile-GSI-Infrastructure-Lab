@@ -1,0 +1,59 @@
+<#
+.SYNOPSIS
+    Automated ADB Environment Hardener for Redmi/MIUI based architectures.
+.DESCRIPTION
+    Interfaces with the Android Debug Bridge to locate, isolate, and remove OEM telemetry 
+    and background analytic services, reducing idle memory overhead prior to GSI deployment.
+.AUTHOR
+    JOSHUA SAMAL | Digital Infrastructure
+#>
+
+$ErrorActionPreference = "Stop"
+
+# Target OEM Packages for Neutralization
+$OEM_Packages = @(
+    "com.miui.analytics",
+    "com.miui.msa.global",
+    "com.miui.bugreport",
+    "com.xiaomi.joyose" # Aggressive thermal throttling service
+)
+
+function Test-AdbConnection {
+    Write-Host "[*] Probing for authorized ADB endpoints..." -ForegroundColor Cyan
+    $adbState = adb get-state 2>$null
+    if ($adbState -match "device") {
+        Write-Host "[+] ADB Tunnel Established." -ForegroundColor Green
+        return $true
+    } else {
+        Write-Host "[!] ADB offline or unauthorized. Check RSA fingerprint on device." -ForegroundColor Red
+        return $false
+    }
+}
+
+function Invoke-SystemDebloat {
+    Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host "   RDJ | Mobile Infrastructure Audit   " -ForegroundColor Cyan
+    Write-Host "==========================================" -ForegroundColor Cyan
+
+    if (-not (Test-AdbConnection)) { exit }
+
+    foreach ($pkg in $OEM_Packages) {
+        Write-Host "[~] Processing Kernel Package: $pkg" -ForegroundColor Yellow
+        try {
+            # Execute uninstall for User 0 (Primary User) keeping base apk in system
+            $result = adb shell pm uninstall -k --user 0 $pkg 2>&1
+            if ($result -match "Success") {
+                Write-Host "    -> Status: Successfully Neutralized" -ForegroundColor Green
+            } else {
+                Write-Host "    -> Status: Not Found or Previously Removed" -ForegroundColor DarkGray
+            }
+        } catch {
+            Write-Host "    -> Error interacting with package." -ForegroundColor Red
+        }
+    }
+    Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host "[+] Environment Hardening Complete. Ready for GSI payload." -ForegroundColor Green
+}
+
+# Execute
+Invoke-SystemDebloat
